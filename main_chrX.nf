@@ -342,7 +342,7 @@ process filter_vcf{
 
     shell:
     """
-    bcftools filter -i 'INFO/R2 > ${r2_thresh}' ${vcf} -Oz -o ${vcf.simpleName}_filtered.vcf.gz
+    bcftools filter -i 'INFO/R2 > ${r2_thresh}' ${vcf} | bcftools sort -Oz -o ${vcf.simpleName}_filtered.vcf.gz
     """
 }
 
@@ -376,7 +376,7 @@ process split_male_female_dosage{
     shell:
     """
     #Keep only dosage field
-    bcftools annotate -x ^FORMAT/DS ${input_vcf} -Oz -o dosage_only.vcf.gz
+    bcftools annotate -x ^FORMAT/GT,^FORMAT/DS ${input_vcf} -Oz -o dosage_only.vcf.gz
 
     #Extract male/female samples
     bcftools view -S ${male_samples} dosage_only.vcf.gz -o male_dosage_only.vcf
@@ -396,6 +396,27 @@ process double_male_dosage{
 
     shell:
     """
-    python $baseDir/bin/dosage_multiplier.py -i ${vcf} -o double_male_dosage.vcf
+    python $baseDir/bin/dosage_multiplier.py -i ${vcf} -o double_dosage.vcf
+    grep ^# ${vcf} > header.txt
+    cat header.txt double_dosage.vcf > double_male_dosage.vcf
     """
 }
+
+process merge_male_female{
+
+    input:
+    file(male_vcf) from male_ds_double
+    file(female_vcf) from female_dosage_ch
+
+    output:
+    file "merged.vcf.gz" into merged_ch
+
+    shell:
+    """
+    bgzip ${male_vcf}
+    bcftools index ${male_vcf}.gz
+    bcftools index ${female_vcf}
+    bcftools merge ${female_vcf} ${male_vcf}.gz -Oz -o merged.vcf.gz
+    """
+}
+
