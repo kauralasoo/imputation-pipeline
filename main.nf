@@ -179,7 +179,7 @@ include { vcf_fixref as vcf_fixref_grch38 } from './modules/preimpute_QC'
 include { CrossMap; CrossMap_QC } from './modules/CrossMap'
 include { eagle_prephasing } from './modules/eagle'
 include { beagle_imputation } from './modules/beagle'
-include { filter_vcf; merge_vcf; merge_unfiltered_vcf } from './modules/postimpute_QC'
+include { filter_vcf; merge_vcf; index_vcf; merge_unfiltered_vcf } from './modules/postimpute_QC'
 
 workflow{
   //Convert input genotypes to GRCh38 coordinates
@@ -200,5 +200,28 @@ workflow{
   eagle_prephasing(split_by_chr.out, eagle_genetic_map_ch.collect(), phasing_ref_ch.collect())
   beagle_imputation(eagle_prephasing.out, beagle_genetic_map_ch.collect(), beagle_ref_ch.collect())
   filter_vcf(beagle_imputation.out)
-  merge_vcf(filter_vcf.out[0].collect(), filter_vcf.out[1].collect())
+  index_vcf(filter_vcf.out)
+  merge_vcf(index_vcf.out[0].collect(), index_vcf.out[1].collect())
+}
+
+workflow no_filter{
+  //Convert input genotypes to GRCh38 coordinates
+  GenotypeHarmonizer_GRCh37(bfile_ch, grch37_ref_panel_ch.collect())
+  plink_to_vcf(GenotypeHarmonizer_GRCh37.out)
+  vcf_fixref(plink_to_vcf.out, grch37_genome_ch.collect(), grch37_ref_panel_ch.collect())
+  CrossMap(vcf_fixref.out, chain_file_ch.collect(), grch38_genome_ch.collect())
+  CrossMap_QC(CrossMap.out)
+  
+  //Perform pre-imputation QC
+  GenotypeHarmonizer_GRCh38(CrossMap_QC.out, grch38_ref_panel_ch.collect())
+  plink_to_vcf_grch38(GenotypeHarmonizer_GRCh38.out)
+  vcf_fixref_grch38(plink_to_vcf_grch38.out, grch38_genome_ch.collect(), grch38_ref_panel_ch.collect())
+  filter_preimpute_vcf(vcf_fixref_grch38.out)
+
+  //Run imputation on each chromosome
+  split_by_chr(filter_preimpute_vcf.out, chromosome_ch)
+  eagle_prephasing(split_by_chr.out, eagle_genetic_map_ch.collect(), phasing_ref_ch.collect())
+  beagle_imputation(eagle_prephasing.out, beagle_genetic_map_ch.collect(), beagle_ref_ch.collect())
+  index_vcf(beagle_imputation.out)
+  merge_unfiltered_vcf(index_vcf.out[0].collect(), index_vcf.out[1].collect())
 }
